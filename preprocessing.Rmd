@@ -1,0 +1,86 @@
+---
+title: "open NB_data"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+date: "2026-11-19"
+---
+
+
+```{r}
+library(tidyverse)
+NB_data <- read_csv("NHANES_20212023_codebook_filtered 1.csv")
+NB_data
+# geeft uitleg over wat de variabelen betekenen
+# 486 rijen × 4 kolommen (1 rij per variabele)
+
+# comment code: 0 wilt zeggen dat het
+```
+
+```{r}
+library(tidyverse)
+NB_data_merged <- read_csv("NHANES_20212023_merged_filtered 1.csv")
+NB_data_merged
+#Dit is de daadwerkelijke meetwaarde van de 11.933 deelnemers, 1 rij per persoon
+
+```
+
+```{r}
+# 1/ Sample size
+dim(NB_data_merged)
+# geeft het aantal kolommen en rijen weer
+nrow(NB_data_merged)
+length(unique(NB_data_merged$SEQN))
+
+# 2/ Categorisch of kwantitatief bekijken (eerste 20 kolommen als voorbeeld)
+str(NB_data_merged[, 1:20])
+
+# 3/ Automatisch factoriseren voor alles
+NB_data_merged <- NB_data_merged %>%
+  mutate(
+    # Zet alle tekstkolommen (chr) automatisch om naar een factor
+    across(where(is.character), as.factor),
+    
+    # Zet alle cijferkolommen met maximaal 10 unieke waarden om naar een factor
+    across(where(~ is.numeric(.x) && n_distinct(.x, na.rm = TRUE) <= 10), as.factor)
+  )
+
+# Controleer of ze nu op Factor staan
+str(NB_data_merged[, 1:20])
+
+```
+
+
+
+```{r}
+missing_summary <- NB_data_merged %>%
+# new tible
+  summarise(across(everything(), ~sum(is.na(.)))) %>%
+  # for each column seen which cells are empty and count these
+  pivot_longer(everything(), names_to = "Variable", values_to = "Missing_Values") %>%
+  mutate(Missing_Percentage = (Missing_Values / nrow(NB_data_merged)) * 100) %>%
+  arrange(desc(Missing_Percentage))
+
+print(missing_summary,n = 486)
+
+```
+```{r}
+
+```
+
+
+
+```{r}
+missing_summary %>%
+  ggplot(aes(x = reorder(Variable, Missing_Percentage), y = Missing_Percentage)) +
+  geom_col(fill = "blue") +
+  coord_flip() +
+  labs(title = "Percentage of Missing Values by Variable", x = "Variables", y = "Percentage of Missing Values") +
+  theme_minimal()
+```
+```{r}
+
+```
+
+
