@@ -1,0 +1,211 @@
+variable,label,file,component,type,role,class,transformation,pct_missing
+SEQN,Respondent sequence number,DEMO_L,Demographics,identifier,identifier,numeric,none,0
+SDDSRVYR,Data release cycle,DEMO_L,Demographics,survey weight / design,survey weight / design,numeric,none,0
+SDMVSTRA,Masked variance pseudo-stratum,DEMO_L,Demographics,survey weight / design,survey weight / design,numeric,none,0
+SDMVPSU,Masked variance pseudo-PSU,DEMO_L,Demographics,survey weight / design,survey weight / design,numeric,none,0
+WTINT2YR,Full sample 2-year interview weight,DEMO_L,Demographics,survey weight / design,survey weight / design,numeric,none,0
+WTMEC2YR,Full sample 2-year MEC exam weight,DEMO_L,Demographics,survey weight / design,survey weight / design,numeric,none,0
+WTPH2YR,Phlebotomy 2 Year Weight,AGP_L,Laboratory,survey weight / design,survey weight / design,numeric,none,78.6
+WTPH2YR_HDL_L,Phlebotomy 2 Year Weight,HDL_L,Laboratory,survey weight / design,survey weight / design,numeric,none,0
+WTSAF2YR,Fasting Subsample 2 Year MEC Weight,TRIGLY_L,Laboratory,survey weight / design,survey weight / design,numeric,none,43.6
+WTPH2YR_TCHOL_L,Phlebotomy 2 Year Weight,TCHOL_L,Laboratory,survey weight / design,survey weight / design,numeric,none,0
+WTPH2YR_CBC_L,Phlebotomy 2 Year Weight,CBC_L,Laboratory,survey weight / design,survey weight / design,numeric,none,0
+WTPH2YR_FAR_L,Phlebotomy 2 Year Weight,FAR_L,Laboratory,survey weight / design,survey weight / design,numeric,none,0
+WTPH2YR_FERTIN_L,Phlebotomy 2 Year Weight,FERTIN_L,Laboratory,survey weight / design,survey weight / design,numeric,none,78.6
+WTPH2YR_FOLATE_L,Phlebotomy 2 Year Weight,FOLATE_L,Laboratory,survey weight / design,survey weight / design,numeric,none,0
+WTPH2YR_FFMR_L,Phlebotomy 2 Year Weight,FFMR_L,Laboratory,survey weight / design,survey weight / design,numeric,none,0
+WTPH2YR_GHB_L,Phlebotomy 2 Year Weight,GHB_L,Laboratory,survey weight / design,survey weight / design,numeric,none,0
+WTPH2YR_HEPA_L,Phlebotomy 2 Year Weight,HEPA_L,Laboratory,survey weight / design,survey weight / design,numeric,none,0
+WTPH2YR_HEPB_S_L,Phlebotomy 2 Year Weight,HEPB_S_L,Laboratory,survey weight / design,survey weight / design,numeric,none,0
+WTPH2YR_HEPBD_L,Phlebotomy 2 Year Weight,HEPBD_L,Laboratory,survey weight / design,survey weight / design,numeric,none,0
+WTPH2YR_HEPC_L,Phlebotomy 2 Year Weight,HEPC_L,Laboratory,survey weight / design,survey weight / design,numeric,none,0
+WTPH2YR_HEPE_L,Phlebotomy 2 Year Weight,HEPE_L,Laboratory,survey weight / design,survey weight / design,numeric,none,0
+WTPH2YR_HSCRP_L,Phlebotomy 2 Year Weight,HSCRP_L,Laboratory,survey weight / design,survey weight / design,numeric,none,0
+WTSAF2YR_INS_L,Fasting Subsample 2 Year MEC Weight,INS_L,Laboratory,survey weight / design,survey weight / design,numeric,none,43.6
+WTPH2YR_PBCD_L,Phlebotomy 2 Year Weight,PBCD_L,Laboratory,survey weight / design,survey weight / design,numeric,none,0
+WTPH2YR_IHGEM_L,Phlebotomy 2 Year Weight,IHGEM_L,Laboratory,survey weight / design,survey weight / design,numeric,none,0
+WTSPF2YR,PFAS subsample weight,PFAS_L,Laboratory,survey weight / design,survey weight / design,numeric,none,49.8
+WTSAF2YR_GLU_L,Fasting Subsample 2 Year MEC Weight,GLU_L,Laboratory,survey weight / design,survey weight / design,numeric,none,43.6
+WTPH2YR_FOLFMS_L,Phlebotomy 2 Year Weight,FOLFMS_L,Laboratory,survey weight / design,survey weight / design,numeric,none,0
+WTPH2YR_TST_L,Phlebotomy 2 Year Weight,TST_L,Laboratory,survey weight / design,survey weight / design,numeric,none,0
+WTPH2YR_BIOPRO_L,Phlebotomy 2 Year Weight,BIOPRO_L,Laboratory,survey weight / design,survey weight / design,numeric,none,0
+WTPH2YR_TFR_L,Phlebotomy 2 Year Weight,TFR_L,Laboratory,survey weight / design,survey weight / design,numeric,none,78.6
+WTPH2YR_VID_L,Phlebotomy 2 Year Weight,VID_L,Laboratory,survey weight / design,survey weight / design,numeric,none,0
+WTSVOC2Y,VOC Subsample Weight,VOCWB_L,Laboratory,survey weight / design,survey weight / design,numeric,none,49.8
+RIDSTATR,Interview/Examination status,DEMO_L,Demographics,technical / status,technical covariate,numeric,none,0
+RIDEXMON,Six-month time period,DEMO_L,Demographics,technical / status,technical covariate,factor,none,0
+PHDSESNZ,Session in which SP was examined,FASTQX_L,Laboratory,technical / status,technical covariate,factor,none,0
+BMDSTATS,Body Measures Component Status Code,BMX_L,Examination,technical / status,technical covariate,numeric,none,0
+BPAOARM,Arm selected - oscillometric,BPXO_L,Examination,technical / status,technical covariate,character,none,1.6
+BPAOCSZ,Coded cuff size - oscillometric,BPXO_L,Examination,technical / status,technical covariate,numeric,none,2.3
+BMIWT,Weight Comment,BMX_L,Examination,technical / status,technical covariate,numeric,none,95.8
+BMIHT,Standing Height Comment,BMX_L,Examination,technical / status,technical covariate,numeric,none,98.2
+PHQ020,Coffee or tea with cream or sugar?,FASTQX_L,Laboratory,technical / status,technical covariate,numeric,none,1
+PHACOFHR,Coffee/tea fast time (hours),FASTQX_L,Laboratory,technical / status,technical covariate,numeric,none,99.6
+PHACOFMN,Coffee/tea fast time (minutes),FASTQX_L,Laboratory,technical / status,technical covariate,numeric,none,99.6
+PHQ030,"Alcohol, such as beer, wine, or liquor?",FASTQX_L,Laboratory,technical / status,technical covariate,numeric,none,1
+PHAALCHR,Alcohol fast time (hours),FASTQX_L,Laboratory,technical / status,technical covariate,numeric,none,99.6
+PHAALCMN,Alcohol fast time (minutes),FASTQX_L,Laboratory,technical / status,technical covariate,numeric,none,99.6
+PHQ040,"Gum, mints, lozenges or cough drops",FASTQX_L,Laboratory,technical / status,technical covariate,numeric,none,1
+PHAGUMHR,"Gum, mints cough drops fast time (hours)",FASTQX_L,Laboratory,technical / status,technical covariate,numeric,none,96.3
+PHAGUMMN,"Gum, mints, cough fast time (minutes)",FASTQX_L,Laboratory,technical / status,technical covariate,numeric,none,96.3
+PHQ050,"Antacids, laxatives, or anti-diarrheals?",FASTQX_L,Laboratory,technical / status,technical covariate,numeric,none,1
+PHAANTHR,"Antacids, laxatives fast time (hours)",FASTQX_L,Laboratory,technical / status,technical covariate,numeric,none,98.3
+PHAANTMN,"Antacids, laxatives fast time (minutes)",FASTQX_L,Laboratory,technical / status,technical covariate,numeric,none,98.3
+PHQ060,Dietary supplements?,FASTQX_L,Laboratory,technical / status,technical covariate,numeric,none,1
+PHASUPHR,Dietary supplements fast time (hours),FASTQX_L,Laboratory,technical / status,technical covariate,numeric,none,96.8
+PHASUPMN,Dietary supplements fast time (minutes),FASTQX_L,Laboratory,technical / status,technical covariate,numeric,none,96.8
+PHAFSTHR,Total length of 'food fast' (hours),FASTQX_L,Laboratory,technical / status,technical covariate,numeric,none,1.1
+PHAFSTMN,Total length of 'food fast' (minutes),FASTQX_L,Laboratory,technical / status,technical covariate,numeric,none,1.1
+FAST_HOURS,Fasting time before blood draw (hours),NA,Derived,derived,technical covariate,numeric,none,1.1
+RIAGENDR,Gender,DEMO_L,Demographics,nominal,feature,factor,none,0
+RIDAGEYR,Age in years at screening,DEMO_L,Demographics,discrete,feature,numeric,none,0
+RIDRETH3,Race/Hispanic origin w/ NH Asian,DEMO_L,Demographics,nominal,feature,factor,none,0
+DMQMILIZ,Served active duty in US Armed Forces,DEMO_L,Demographics,nominal,feature,factor,none,0
+DMDBORN4,Country of birth,DEMO_L,Demographics,nominal,feature,factor,none,0
+DMDEDUC2,Education level - Adults 20+,DEMO_L,Demographics,ordinal,feature,ordered,none,0.1
+DMDMARTZ,Marital status,DEMO_L,Demographics,nominal,feature,factor,none,0.1
+DMDHHSIZ,Total number of people in the Household,DEMO_L,Demographics,discrete,feature,numeric,none,0
+INDFMPIR,Ratio of family income to poverty,DEMO_L,Demographics,continuous,feature,numeric,none,13.1
+BMXWT,Weight (kg),BMX_L,Examination,continuous,feature,numeric,log2(x),1.3
+BMXHT,Standing Height (cm),BMX_L,Examination,continuous,feature,numeric,none,1.1
+BMXBMI,Body Mass Index (kg/m**2),BMX_L,Examination,continuous,feature,numeric,log2(x),1.6
+BMXLEG,Upper Leg Length (cm),BMX_L,Examination,continuous,feature,numeric,none,6.4
+BMXARML,Upper Arm Length (cm),BMX_L,Examination,continuous,feature,numeric,none,2.8
+BMXARMC,Arm Circumference (cm),BMX_L,Examination,continuous,feature,numeric,none,2.9
+BMXWAIST,Waist Circumference (cm),BMX_L,Examination,continuous,feature,numeric,none,4.9
+BMXHIP,Hip Circumference (cm),BMX_L,Examination,continuous,feature,numeric,log2(x),5.9
+URXUMA,"Albumin, urine (ug/mL)",ALB_CR_L,Laboratory,continuous,feature,numeric,log2(x),2.5
+URXUCR,"Creatinine, urine (mg/dL)",ALB_CR_L,Laboratory,continuous,feature,numeric,log2(x),2.5
+URDACT,Albumin creatinine ratio (mg/g),ALB_CR_L,Laboratory,continuous,feature,numeric,log2(x),2.5
+LBXBA,Butyrylcholinesterase Activity (U/mL),BCHE_L,Laboratory,continuous,feature,numeric,none,7.5
+LBXCH,Butyrylcholinesterase Con (ng/mL),BCHE_L,Laboratory,continuous,feature,numeric,none,7.6
+LBDHDD,Direct HDL-Cholesterol (mg/dL),HDL_L,Laboratory,continuous,feature,numeric,log2(x),9.3
+LBXTLG,Triglyceride (mg/dL),TRIGLY_L,Laboratory,continuous,feature,numeric,log2(x),49.3
+LBDLDL,"LDL-Cholesterol, Friedewald (mg/dL)",TRIGLY_L,Laboratory,continuous,feature,numeric,none,49.9
+LBDLDLM,"LDL-Cholesterol, Martin-Hopkins (mg/dL)",TRIGLY_L,Laboratory,continuous,feature,numeric,none,49.9
+LBDLDLN,"LDL-Cholesterol, NIH equation 2 (mg/dL)",TRIGLY_L,Laboratory,continuous,feature,numeric,none,49.3
+LBXTC,Total Cholesterol (mg/dL),TCHOL_L,Laboratory,continuous,feature,numeric,none,9.3
+LBXWBCSI,White blood cell count (1000 cells/uL),CBC_L,Laboratory,continuous,feature,numeric,log2(x),4.8
+LBXLYPCT,Lymphocyte percent (%),CBC_L,Laboratory,continuous,feature,numeric,none,5
+LBXMOPCT,Monocyte percent (%),CBC_L,Laboratory,continuous,feature,numeric,log2(x),5
+LBXNEPCT,Segmented neutrophils percent (%),CBC_L,Laboratory,continuous,feature,numeric,none,5
+LBXEOPCT,Eosinophils percent (%),CBC_L,Laboratory,continuous,feature,numeric,log2(x + 0.05),5
+LBXBAPCT,Basophils percent (%),CBC_L,Laboratory,continuous,feature,numeric,log2(x),5
+LBDLYMNO,Lymphocyte number (1000 cells/uL),CBC_L,Laboratory,continuous,feature,numeric,log2(x),5
+LBDMONO,Monocyte number (1000 cells/uL),CBC_L,Laboratory,continuous,feature,numeric,log2(x),5
+LBDNENO,Segmented neutrophils num (1000 cell/uL),CBC_L,Laboratory,continuous,feature,numeric,log2(x),5
+LBDEONO,Eosinophils number (1000 cells/uL),CBC_L,Laboratory,continuous,feature,numeric,log2(x + 0.05),5
+LBDBANO,Basophils number (1000 cells/uL),CBC_L,Laboratory,continuous,feature,numeric,none,5
+LBXRBCSI,Red blood cell count (million cells/uL),CBC_L,Laboratory,continuous,feature,numeric,none,4.8
+LBXHGB,Hemoglobin (g/dL),CBC_L,Laboratory,continuous,feature,numeric,none,4.8
+LBXHCT,Hematocrit (%),CBC_L,Laboratory,continuous,feature,numeric,none,4.8
+LBXMCVSI,Mean cell volume (fL),CBC_L,Laboratory,continuous,feature,numeric,none,4.8
+LBXMC,Mean Cell Hgb Conc. (g/dL),CBC_L,Laboratory,continuous,feature,numeric,none,4.8
+LBXMCHSI,Mean cell hemoglobin (pg),CBC_L,Laboratory,continuous,feature,numeric,none,4.8
+LBXRDW,Red cell distribution width (%),CBC_L,Laboratory,continuous,feature,numeric,log2(x),4.8
+LBXPLTSI,Platelet count (1000 cells/uL),CBC_L,Laboratory,continuous,feature,numeric,none,4.8
+LBXMPSI,Mean platelet volume (fL),CBC_L,Laboratory,continuous,feature,numeric,none,4.8
+LBXNRBC,Nucleated red blood cells (/100 WBC),CBC_L,Laboratory,continuous,feature,numeric,none,5
+LBXCOT,"Cotinine, Serum (ng/mL)",COT_L,Laboratory,continuous,feature,numeric,log2(x),8.9
+LBXHCOT,"Hydroxycotinine, Serum (ng/mL)",COT_L,Laboratory,continuous,feature,numeric,log2(x),8.9
+LBXPAN,alpha-Linolenic acid (C18:3n-3) (%),FAR_L,Laboratory,continuous,feature,numeric,log2(x),6.1
+LBXP1A,Arachidic acid (C20:0) (%),FAR_L,Laboratory,continuous,feature,numeric,none,6.6
+LBXPRA,Arachidonic acid (C20:4n-6) (%),FAR_L,Laboratory,continuous,feature,numeric,none,5.6
+LBXPDA,Docosanoic acid (C22:0) (%),FAR_L,Laboratory,continuous,feature,numeric,none,6.1
+LBXPHA,Docosahexaenoic acid (C22:6n-3) (%),FAR_L,Laboratory,continuous,feature,numeric,none,5.6
+LBXPD3,Docosapentaenoic acid 3 (C22:5n-3) (%),FAR_L,Laboratory,continuous,feature,numeric,none,5.7
+LBXPD6,Docosapentaenoic acid (C22:5n-6) (%),FAR_L,Laboratory,continuous,feature,numeric,none,5.6
+LBXPTA,Docosatetraenoic acid (C22:4n-6) (%),FAR_L,Laboratory,continuous,feature,numeric,none,5.6
+LBXPED,"11,14-Eicosadienoic acid (C20:2n6) (%)",FAR_L,Laboratory,continuous,feature,numeric,none,5.6
+LBXP1E,11-Eicosenoic acid (C20:1n-9) (%),FAR_L,Laboratory,continuous,feature,numeric,log2(x),7.8
+LBXPPE,Eicosapentaenoic acid (C20:5n-3) (%),FAR_L,Laboratory,continuous,feature,numeric,log2(x),5.6
+LBXPLG,gamma-Linolenic acid (C18:3n-6) (%),FAR_L,Laboratory,continuous,feature,numeric,log2(x),6.1
+LBXPGH,homo-gamma-Linolenic acid(C20:3n-6) (%),FAR_L,Laboratory,continuous,feature,numeric,log2(x),5.6
+LBXP1G,Tetracosanoic acid (C24:0) (%),FAR_L,Laboratory,continuous,feature,numeric,none,6.2
+LBXPNL,Linoleic acid (C18:2n-6) (%),FAR_L,Laboratory,continuous,feature,numeric,none,6.1
+LBXPMR,Myristic acid (C14:0) (%),FAR_L,Laboratory,continuous,feature,numeric,log2(x),6.5
+LBXPNR,15-Tetracosenoic acid (C24:1n9) (%),FAR_L,Laboratory,continuous,feature,numeric,none,6.3
+LBXPOL,Oleic acid (C18:1n-9) (%),FAR_L,Laboratory,continuous,feature,numeric,none,6.8
+LBXPPL,Palmitoleic acid (16:1n-7) (%),FAR_L,Laboratory,continuous,feature,numeric,log2(x),7.2
+LBXPPM,Palmitic acid (C16:0) (%),FAR_L,Laboratory,continuous,feature,numeric,log2(x),5.6
+LBXPST,Stearic acid (C18:0) (%),FAR_L,Laboratory,continuous,feature,numeric,log2(x),6.2
+LBDRFO,RBC folate (ng/mL),FOLATE_L,Laboratory,continuous,feature,numeric,log2(x),5.6
+LBDRF7SI,"Total Folate, RBC (nmol/L)",FFMR_L,Laboratory,continuous,feature,numeric,log2(x),5.9
+LBXRF1SI,"5-Methyl-tetrahydrofolate, RBC (nmol/L)",FFMR_L,Laboratory,continuous,feature,numeric,log2(x),5.9
+LBXRF4SI,"Tetrahydrofolate, RBC (nmol/L)",FFMR_L,Laboratory,continuous,feature,numeric,log2(x),5.9
+LBXRF5SI,"5,10-Methenyl-tetrahydrofolate (nmol/L)",FFMR_L,Laboratory,continuous,feature,numeric,log2(x),5.9
+LBXRF6SI,"MeFox oxidation product, RBC (nmol/L)",FFMR_L,Laboratory,continuous,feature,numeric,log2(x),5.9
+LBXGH,Glycohemoglobin (%),GHB_L,Laboratory,continuous,feature,numeric,log2(x),4.9
+LBXHA,Hepatitis A antibody,HEPA_L,Laboratory,nominal,feature,factor,none,7.4
+LBXHBS,Hepatitis B Surface Antibody,HEPB_S_L,Laboratory,nominal,feature,factor,none,6.8
+LBXHBC,Hepatitis B core antibody,HEPBD_L,Laboratory,nominal,feature,factor,none,6.8
+LBDHEG,Hepatitis E IgG (anti-HEV),HEPE_L,Laboratory,nominal,feature,factor,none,6.8
+LBXHSCRP,HS C-Reactive Protein (mg/L),HSCRP_L,Laboratory,continuous,feature,numeric,log2(x),7.7
+LBXIN,Insulin (uU/mL),INS_L,Laboratory,continuous,feature,numeric,log2(x),49.4
+LBXBPB,Blood lead (ug/dL),PBCD_L,Laboratory,continuous,feature,numeric,log2(x),4.8
+LBXBCD,Blood cadmium (ug/L),PBCD_L,Laboratory,continuous,feature,numeric,log2(x),4.8
+LBXTHG,"Blood mercury, total (ug/L)",PBCD_L,Laboratory,continuous,feature,numeric,log2(x),4.8
+LBXBSE,Blood selenium (ug/L),PBCD_L,Laboratory,continuous,feature,numeric,log2(x),4.8
+LBXBMN,Blood manganese (ug/L),PBCD_L,Laboratory,continuous,feature,numeric,log2(x),4.8
+LBXBGM,"Mercury, methyl (ug/L)",IHGEM_L,Laboratory,continuous,feature,numeric,log2(x),4.9
+LBXGLU,Fasting Glucose (mg/dL),GLU_L,Laboratory,continuous,feature,numeric,log2(x),47.1
+LBDFOTSI,Serum total folate (nmol/L),FOLFMS_L,Laboratory,continuous,feature,numeric,log2(x),7.4
+LBXSF1SI,5-Methyl-tetrahydrofolate (nmol/L),FOLFMS_L,Laboratory,continuous,feature,numeric,log2(x),7.4
+LBXSF2SI,Folic acid (nmol/L),FOLFMS_L,Laboratory,continuous,feature,numeric,log2(x),7.4
+LBXSF4SI,Tetrahydrofolate (nmol/L),FOLFMS_L,Laboratory,continuous,feature,numeric,log2(x),7.4
+LBXSF6SI,Mefox oxidation product (nmol/L),FOLFMS_L,Laboratory,continuous,feature,numeric,log2(x),7.4
+LBX17H,17a-hydroxyprogesterone (ng/dL),TST_L,Laboratory,continuous,feature,numeric,log2(x),9.1
+LBXAND,Androstenedione (ng/dL),TST_L,Laboratory,continuous,feature,numeric,log2(x),8.2
+LBXAMH,Anti-Mullerian hormone (ng/mL),TST_L,Laboratory,continuous,feature,numeric,log2(x),8.1
+LBXDHE,DHEAS (µg/dL),TST_L,Laboratory,continuous,feature,numeric,log2(x),9.7
+LBXEST,Estradiol (pg/mL),TST_L,Laboratory,continuous,feature,numeric,log2(x),8.7
+LBXESO,Estrone (ng/dL),TST_L,Laboratory,continuous,feature,numeric,log2(x),8.4
+LBXES1,Estrone Sulfate (pg/mL),TST_L,Laboratory,continuous,feature,numeric,log2(x),10.1
+LBXFSH,Follicle Stimulating Hormone (mIU/mL),TST_L,Laboratory,continuous,feature,numeric,log2(x),8.1
+LBXLUH,Luteinizing Hormone (mIU/mL),TST_L,Laboratory,continuous,feature,numeric,log2(x),8.1
+LBXPG4,Progesterone (ng/dL),TST_L,Laboratory,continuous,feature,numeric,log2(x),8.8
+LBXSHBG,SHBG (nmol/L),TST_L,Laboratory,continuous,feature,numeric,log2(x),8.1
+LBXTST,"Testosterone, total (ng/dL)",TST_L,Laboratory,continuous,feature,numeric,log2(x),8.5
+LBXSATSI,Alanine Aminotransferase (ALT) (IU/L),BIOPRO_L,Laboratory,continuous,feature,numeric,log2(x),10.3
+LBXSAL,"Albumin, refrigerated serum (g/dL)",BIOPRO_L,Laboratory,continuous,feature,numeric,none,9.6
+LBXSAPSI,Alkaline Phosphatase (ALP) (IU/L),BIOPRO_L,Laboratory,continuous,feature,numeric,log2(x),10.2
+LBXSASSI,Aspartate Aminotransferase (AST) (IU/L),BIOPRO_L,Laboratory,continuous,feature,numeric,log2(x),10.5
+LBXSC3SI,Bicarbonate (mmol/L),BIOPRO_L,Laboratory,continuous,feature,numeric,none,10.2
+LBXSBU,Blood Urea Nitrogen (mg/dL),BIOPRO_L,Laboratory,continuous,feature,numeric,log2(x),10.2
+LBXSCLSI,Chloride (mmol/L),BIOPRO_L,Laboratory,continuous,feature,numeric,none,10.2
+LBXSCK,Creatine Phosphokinase (CPK) (U/L),BIOPRO_L,Laboratory,continuous,feature,numeric,log2(x),10.3
+LBXSCR,"Creatinine, refrigerated serum (mg/dL)",BIOPRO_L,Laboratory,continuous,feature,numeric,log2(x),10.2
+LBXSGB,Globulin (g/dL),BIOPRO_L,Laboratory,continuous,feature,numeric,none,9.7
+LBXSGL,"Glucose, refrigerated serum (mg/dL)",BIOPRO_L,Laboratory,continuous,feature,numeric,log2(x),9.8
+LBXSGTSI,Gamma Glutamyl Transferase (GGT) (IU/L),BIOPRO_L,Laboratory,continuous,feature,numeric,log2(x),10.2
+LBXSIR,"Iron, refrigerated serum (µg/dL)",BIOPRO_L,Laboratory,continuous,feature,numeric,none,9.7
+LBXSLDSI,Lactate Dehydrogenase (LDH) (U/L),BIOPRO_L,Laboratory,continuous,feature,numeric,log2(x),33.3
+LBXMAGN,Magnesium (mg/dL),BIOPRO_L,Laboratory,continuous,feature,numeric,none,10.2
+LBXSOSSI,Osmolality (mmol/Kg),BIOPRO_L,Laboratory,continuous,feature,numeric,none,10.3
+LBXSPH,Phosphorus (mg/dL),BIOPRO_L,Laboratory,continuous,feature,numeric,none,10.3
+LBXSKSI,Potassium (mmol/L),BIOPRO_L,Laboratory,continuous,feature,numeric,none,10.8
+LBXSNASI,Sodium (mmol/L),BIOPRO_L,Laboratory,continuous,feature,numeric,none,9.6
+LBXSTB,Total Bilirubin (mg/dL),BIOPRO_L,Laboratory,continuous,feature,numeric,log2(x),10.2
+LBXSCA,Total Calcium (mg/dL),BIOPRO_L,Laboratory,continuous,feature,numeric,none,9.7
+LBXSCH,"Cholesterol, refrigerated serum (mg/dL)",BIOPRO_L,Laboratory,continuous,feature,numeric,none,10.2
+LBXSTP,Total Protein (g/dL),BIOPRO_L,Laboratory,continuous,feature,numeric,none,9.7
+LBXSTR,"Triglycerides, refrig serum (mg/dL)",BIOPRO_L,Laboratory,continuous,feature,numeric,log2(x),9.7
+LBXSUA,Uric acid (mg/dL),BIOPRO_L,Laboratory,continuous,feature,numeric,none,10.2
+LBXVIDMS,25OHD2+25OHD3 (nmol/L),VID_L,Laboratory,continuous,feature,numeric,log2(x),7.7
+LBXVD3MS,25OHD3 (nmol/L),VID_L,Laboratory,continuous,feature,numeric,log2(x),7.7
+LBXVE3MS,epi-25OHD3 (nmol/L),VID_L,Laboratory,continuous,feature,numeric,log2(x),8.8
+ALQ111,Ever had a drink of any kind of alcohol,ALQ_L,Questionnaire,nominal,feature,factor,none,13.7
+ALQ121,Past 12 mos how often drink alc bev,ALQ_L,Questionnaire,ordinal,feature,ordered,none,13.7
+ALQ130,Avg # alcoholic drinks/day/past 12 mos,ALQ_L,Questionnaire,discrete,feature,numeric,none,14.1
+ALQ142,# days have 4/5 drinks/past 12 mos,ALQ_L,Questionnaire,ordinal,feature,ordered,none,14.1
+ALQ151,Ever have 4/5 or more drinks every day,ALQ_L,Questionnaire,nominal,feature,factor,none,14.1
+DBQ930,Main meal planner/preparer,DBQ_L,Questionnaire,nominal,feature,factor,none,0
+DBQ935,Shared meal planning/preparing duty,DBQ_L,Questionnaire,nominal,feature,factor,none,0
+DBQ940,Main food shopper,DBQ_L,Questionnaire,nominal,feature,factor,none,0
+DBQ945,Shared food shopping duty,DBQ_L,Questionnaire,nominal,feature,factor,none,0
+SBP_mean,"Systolic blood pressure, mean of readings (mmHg)",NA,Derived,derived,feature,numeric,none,3.3
+DBP_mean,"Diastolic blood pressure, mean of readings (mmHg)",NA,Derived,derived,feature,numeric,none,3.3
+PULSE_mean,"Pulse, mean of readings (/min)",NA,Derived,derived,feature,numeric,none,3.3
+SMOKER_COT,Active tobacco use (serum cotinine >= 3 ng/mL),NA,Derived,derived,feature,factor,none,8.9
+n_outlying_features,NA,NA,NA,NA,QC flag,numeric,none,0

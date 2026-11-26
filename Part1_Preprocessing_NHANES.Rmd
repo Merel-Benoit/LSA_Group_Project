@@ -1,0 +1,1124 @@
+---
+title: "LSABD group project – Part 1: exploration, preprocessing and quality control of NHANES 2021–2023"
+author: "Group XX"
+date: "`r format(Sys.Date(), '%d/%m/%Y')`"
+output:
+  html_document:
+    theme: paper
+    highlight: tango
+    code_folding: show
+    toc: true
+    number_sections: true
+    toc_float: true
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
+                      fig.align = "center", fig.width = 8, fig.height = 5)
+```
+
+# Goal and overview
+
+This notebook gets the NHANES 2021–2023 dataset (dataset 3) ready for analysis. Following the
+guiding questions of Part 1, we:
+
+1. describe the structure of the data and the type of every variable;
+2. recode NHANES special codes ("refused", "don't know", "indeterminate") to missing values;
+3. remove redundant and uninformative columns (unit duplicates, constant columns, analytes that are mostly below the detection limit);
+4. map where values are missing and *why* they are missing;
+5. define the analysis population and filter features;
+6. look for implausible values and outlying participants;
+7. transform skewed variables;
+8. check with correlation heatmaps and PCA whether participants cluster by biology or by technical factors;
+9. export the preprocessed dataset together with a variable dictionary and a log of every decision.
+
+Every decision is stored in `preprocessing_log`, which is exported at the end so it can be cited in the
+methods section of the report.
+
+Useful NHANES documentation (variable definitions and special codes):
+
+* Demographics: <https://wwwn.cdc.gov/nchs/nhanes/search/datapage.aspx?Component=Demographics&Cycle=2021-2023>
+* Laboratory: <https://wwwn.cdc.gov/nchs/nhanes/search/datapage.aspx?Component=Laboratory&Cycle=2021-2023>
+* Example of a variable page (`RIDSTATR`): <https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public/2021/DataFiles/DEMO_L.htm#RIDSTATR>
+
+## Libraries and parameters
+
+All thresholds are defined once here, so that a different choice can be tested by changing one line.
+
+```{r libraries}
+library(tidyverse)
+library(ComplexHeatmap)
+library(circlize)
+library(RColorBrewer)
+
+set.seed(2026)
+
+# folder that contains the two csv files
+data_dir <- "."
+data_file     <- file.path(data_dir, "NHANES_20212023_merged_filtered_1.csv")
+codebook_file <- file.path(data_dir, "NHANES_20212023_codebook_filtered_1.csv")
+
+# preprocessing parameters (justified in the corresponding sections)
+MIN_AGE             <- 20    # analysis population: adults aged 20+ (education is only asked from 20 on)
+MAX_MISSING_FEATURE <- 0.50  # drop features missing in > 50% of the analysis population
+MAX_BELOW_LOD       <- 0.50  # drop analytes with > 50% of the values below the detection limit
+NZV_THRESHOLD       <- 0.95  # drop features where one value makes up > 95% of the observations
+SKEW_THRESHOLD      <- 1     # log2-transform continuous features with skewness > 1
+ROBUST_Z            <- 5     # flag values more than 5 robust SDs from the median (after transformation)
+PCA_MAX_MISSING     <- 0.20  # lab features used for PCA may be missing in at most 20% of participants
+
+# helper to log every preprocessing decision
+preprocessing_log <- tibble(step = character(), n_samples = integer(),
+                            n_features = integer(), decision = character())
+log_step <- function(step, data, decision) {
+  preprocessing_log <<- add_row(preprocessing_log, step = step, n_samples = nrow(data),
+                                n_features = ncol(data), decision = decision)
+}
+
+# skewness without extra packages
+skewness <- function(x) {
+  x <- x[!is.na(x)]
+  if (length(x) < 3 || sd(x) == 0) return(NA_real_)
+  mean((x - mean(x))^3) / sd(x)^3
+}
+```
+
+# Reading the data
+
+```{r read}
+nhanes_raw <- read_csv(data_file, guess_max = 12000)
+
+# the codebook contains a few non-UTF8 characters (e.g. µ), hence the latin1 encoding
+codebook <- read_csv(codebook_file, locale = locale(encoding = "latin1")) %>%
+  mutate(cb_index = row_number())
+
+dim(nhanes_raw)
+nhanes_raw[1:5, 1:8]
+
+# every column should be documented in the codebook
+setdiff(names(nhanes_raw), codebook$variable)
+length(unique(nhanes_raw$SEQN)) == nrow(nhanes_raw)   # one row per participant?
+
+log_step("Raw data", nhanes_raw, "Merged NHANES 2021-2023 file as provided (one row per participant, SEQN unique).")
+```
+
+The raw table contains **`r nrow(nhanes_raw)` participants** (rows) and **`r ncol(nhanes_raw)` variables**
+(columns), coming from `r n_distinct(codebook$file)` NHANES data files in four components.
+
+```{r components}
+codebook %>%
+  count(component, file, name = "n_variables") %>%
+  group_by(component) %>%
+  summarise(n_files = n(), n_variables = sum(n_variables)) %>%
+  knitr::kable(caption = "Number of NHANES data files and variables per component")
+```
+
+# Variable types
+
+Most NHANES columns are stored as numbers, also when they are categories (e.g. `RIAGENDR`: 1 = male,
+2 = female). Treating such codes as measurements would be wrong, so we first assign every variable a
+**role** and a **type**. The categorical variables were classified by hand using the NHANES documentation;
+the remaining numeric variables are measurements.
+
+```{r variable-types}
+weights_design <- c("SDDSRVYR", "SDMVSTRA", "SDMVPSU", grep("^WT", names(nhanes_raw), value = TRUE))
+
+technical <- c("RIDSTATR",            # interviewed only (1) or interviewed + examined (2)
+               "RIDEXMON",            # six-month period of the exam (Nov-Apr / May-Oct)
+               "PHDSESNZ",            # exam session (morning / afternoon-evening)
+               "BMDSTATS",            # body measures status code
+               "BPAOARM", "BPAOCSZ",  # arm and cuff size used for blood pressure
+               grep("^BMI(WT|RECUM|HEAD|HT|LEG|ARML|ARMC|WAIST|HIP)$", names(nhanes_raw), value = TRUE),
+               grep("^PH(Q|A)", names(nhanes_raw), value = TRUE))   # fasting questionnaire
+
+# limit-of-detection comment codes (0 = at/above, 1 = below detection limit)
+lod_codes <- codebook %>%
+  filter(component == "Laboratory",
+         str_detect(label, regex("comment|cmt|comt", ignore_case = TRUE))) %>%
+  pull(variable)
+
+nominal <- c("RIAGENDR", "RIDRETH1", "RIDRETH3", "DMQMILIZ", "DMDBORN4", "DMDMARTZ", "RIDEXPRG",
+             "DMDHRGND", "DMDHRMAZ", "LBXHA", "LBXHBS", "LBXHBC", "LBDHBG", "LBDHD", "LBXHCR",
+             "LBDHCI", "LBXHCG", "LBDHEG", "LBDHEM", "URXPREG", "ALQ111", "ALQ151", "DBQ010",
+             grep("^DBQ073", names(nhanes_raw), value = TRUE),
+             "DBQ301", "DBQ330", "DBQ360", "DBQ370", "DBQ390", "DBQ400", "DBQ421", "DBQ424",
+             "DBQ930", "DBQ935", "DBQ940", "DBQ945", "ECQ080", "ECQ090", "WHQ030E", "MCQ080E")
+
+ordinal  <- c("DMDYRUSR", "DMDEDUC2", "DMDHRAGZ", "DMDHREDZ", "DMDHSEDZ", "BMDBMIC",
+              "ALQ121", "ALQ142", "ALQ270", "ALQ280")        # ALQ1xx/2xx: frequency categories 0-10
+
+discrete <- c("RIDAGEYR", "RIDAGEMN", "RIDEXAGM", "DMDHHSIZ", "ALQ130", "ALQ170",
+              "DBD030", "DBD041", "DBD050", "DBD055", "DBD061", "DBD381", "DBD411",
+              "ECD070A", "ECD070B")
+
+variable_overview <- codebook %>%
+  filter(variable %in% names(nhanes_raw)) %>%
+  mutate(type = case_when(
+    variable == "SEQN"              ~ "identifier",
+    variable %in% weights_design    ~ "survey weight / design",
+    variable %in% technical         ~ "technical / status",
+    variable %in% lod_codes         ~ "detection-limit flag",
+    variable %in% nominal           ~ "nominal",
+    variable %in% ordinal           ~ "ordinal",
+    variable %in% discrete          ~ "discrete",
+    TRUE                            ~ "continuous"))
+
+variable_overview %>%
+  count(component, type) %>%
+  pivot_wider(names_from = component, values_from = n, values_fill = 0) %>%
+  knitr::kable(caption = "Variable roles and types per component")
+```
+
+```{r variable-types-plot, fig.height = 4}
+variable_overview %>%
+  ggplot(aes(x = fct_rev(fct_infreq(type)), fill = component)) +
+  geom_bar() +
+  coord_flip() +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_fill_brewer(palette = "Set2") +
+  theme_classic() +
+  theme(axis.line.y = element_blank(), axis.ticks.y = element_blank()) +
+  labs(x = "", y = "number of variables", fill = "NHANES component",
+       title = "Most variables are continuous laboratory measurements")
+```
+
+**Observations.** The laboratory component dominates the dataset. About a quarter of the columns are not
+biological features at all: survey weights and design variables, technical status variables and
+detection-limit flags. These are kept as metadata (weights, technical factors) or used for quality
+control (detection-limit flags), but are not analysed as features.
+
+# Special codes
+
+NHANES stores answers such as "refused" (7, 77, 777, ...) and "don't know" (9, 99, 999, ...) as numbers
+in the same column as the real answers. Left in, a "don't know" on the number of drinks per day
+(`ALQ130` = 999) would be read as 999 drinks. A blanket replacement of every 7 or 9 is **not** an option,
+because for continuous variables these are valid values. We therefore list the codes per variable, as
+documented on the NHANES variable pages.
+
+```{r special-codes}
+special_codes <- list(
+  # demographics
+  DMQMILIZ = c(7, 9), DMDYRUSR = c(77, 99), DMDEDUC2 = c(7, 9), DMDMARTZ = c(77, 99),
+  DMDBORN4 = c(77, 99), DMDHREDZ = c(7, 9), DMDHRMAZ = c(77, 99), DMDHSEDZ = c(7, 9),
+  RIDEXPRG = 3,                                   # "cannot ascertain"
+  # alcohol questionnaire
+  ALQ111 = c(7, 9), ALQ121 = c(77, 99), ALQ130 = c(777, 999), ALQ142 = c(77, 99),
+  ALQ270 = c(77, 99), ALQ280 = c(77, 99), ALQ151 = c(7, 9), ALQ170 = c(777, 999),
+  # diet behaviour (children) and early childhood
+  DBQ010 = c(7, 9), DBQ073A = c(77, 99), DBQ073B = c(77, 99), DBQ073C = c(77, 99),
+  DBQ073D = c(77, 99), DBQ073E = c(77, 99), DBQ073U = c(77, 99),
+  DBQ301 = c(7, 9), DBQ330 = c(7, 9), DBQ360 = c(7, 9), DBQ370 = c(7, 9), DBQ390 = c(7, 9),
+  DBQ400 = c(7, 9), DBQ421 = c(7, 9), DBQ424 = c(7, 9), DBQ930 = c(7, 9), DBQ935 = c(7, 9),
+  DBQ940 = c(7, 9), DBQ945 = c(7, 9),
+  # 666666 = "still breastfeeding / never fed ...": not a number of days
+  DBD030 = c(666666, 777777, 999999), DBD041 = c(666666, 777777, 999999),
+  DBD050 = c(666666, 777777, 999999), DBD055 = c(666666, 777777, 999999),
+  DBD061 = c(666666, 777777, 999999), DBD381 = c(7777, 9999), DBD411 = c(7777, 9999),
+  ECD070A = c(7777, 9999), ECD070B = c(7777, 9999), ECQ080 = c(7, 9), ECQ090 = c(7, 9),
+  WHQ030E = c(7, 9), MCQ080E = c(7, 9),
+  # laboratory: "indeterminate" test results
+  LBXHA = 3, LBXHBC = 3, LBDHEG = 3, URXPREG = 3
+)
+
+n_recoded <- map_int(names(special_codes), ~ sum(nhanes_raw[[.x]] %in% special_codes[[.x]]))
+tibble(variable = names(special_codes), n_recoded = n_recoded) %>%
+  filter(n_recoded > 0) %>%
+  left_join(codebook %>% select(variable, label), by = "variable") %>%
+  arrange(desc(n_recoded)) %>%
+  knitr::kable(caption = "Number of special codes recoded to NA per variable")
+
+nhanes <- nhanes_raw
+for (v in names(special_codes)) {
+  nhanes[[v]][nhanes[[v]] %in% special_codes[[v]]] <- NA
+}
+log_step("Special codes", nhanes,
+         paste0("Recoded ", sum(n_recoded), " refused/don't know/indeterminate codes to NA (variable-specific code lists)."))
+```
+
+## Skip patterns: "not asked" is not "missing"
+
+Questionnaires use skip patterns: participants who never drank alcohol (`ALQ111` = 2) are not asked how often they
+drank in the past year, and participants who did not drink in the past year (`ALQ121` = 0) are not asked how many
+drinks they had. These values are empty in the data, but their true value is known: zero. Treating them as missing
+would throw away about a fifth of the adults and, worse, mainly the non-drinkers.
+
+```{r skip-patterns}
+missing_before <- colSums(is.na(nhanes[nhanes$RIDAGEYR >= 18, c("ALQ121", "ALQ130", "ALQ142", "ALQ151")]))
+
+nhanes <- nhanes %>%
+  mutate(ALQ121 = if_else(ALQ111 %in% 2 & is.na(ALQ121), 0, ALQ121),     # never drank -> not in past year
+         ALQ151 = if_else(ALQ111 %in% 2 & is.na(ALQ151), 2, ALQ151),     # never drank -> "no"
+         ALQ130 = if_else(ALQ121 %in% 0 & is.na(ALQ130), 0, ALQ130),     # no drinks in past year -> 0 per day
+         ALQ142 = if_else(ALQ121 %in% 0 & is.na(ALQ142), 0, ALQ142))     # -> never 4/5+ drinks
+
+missing_after <- colSums(is.na(nhanes[nhanes$RIDAGEYR >= 18, c("ALQ121", "ALQ130", "ALQ142", "ALQ151")]))
+rbind(missing_before, missing_after)
+
+log_step("Skip patterns", nhanes,
+         "Filled skipped alcohol questions with their implied value (0 drinks / 'no') for never or past-year non-drinkers.")
+```
+
+The remaining missing values in the alcohol questions are mostly participants who were not examined (the
+alcohol questionnaire is completed in the examination centre) and a few who did not complete it.
+
+As a safety net, we list non-laboratory numeric variables whose maximum still looks like a code:
+
+```{r special-codes-check}
+variable_overview %>%
+  filter(type %in% c("nominal", "ordinal", "discrete"), variable %in% names(nhanes)) %>%
+  mutate(max_value = map_dbl(variable, ~ suppressWarnings(max(nhanes[[.x]], na.rm = TRUE)))) %>%
+  filter(max_value %in% c(7, 9, 77, 99, 777, 999, 7777, 9999, 77777, 99999)) %>%
+  select(variable, label, max_value)
+```
+
+The remaining hits are valid values (e.g. a frequency category of 9, or a household of 7 people), which we
+verified in the documentation. Note also that some variables are **top-coded**: `RIDAGEYR` = 80 means
+"80 years or older", `INDFMPIR` = 5 means "income at least 5 times the poverty line", and `DMDHHSIZ` = 7
+means "7 or more people". These values are kept, but the ceiling should be kept in mind when modelling.
+
+The effect of the recoding on a questionnaire variable:
+
+```{r special-codes-plot, fig.height = 3.5}
+bind_rows(
+  tibble(value = nhanes_raw$ALQ130, version = "before recoding"),
+  tibble(value = nhanes$ALQ130,     version = "after recoding")) %>%
+  drop_na() %>%
+  mutate(version = fct_relevel(version, "before recoding")) %>%
+  ggplot(aes(x = value)) +
+  geom_histogram(bins = 60, fill = "grey40") +
+  facet_wrap(~version, scales = "free_x") +
+  scale_y_continuous(expand = c(0, 0)) +
+  theme_classic() +
+  labs(x = "average number of alcoholic drinks per day (ALQ130)", y = "number of participants")
+```
+
+# Redundant and uninformative columns
+
+## Duplicated units
+
+Many laboratory results are reported twice: in conventional units (e.g. mg/dL) and in SI units
+(e.g. mmol/L). Both columns carry the same information. They are detected as variables from the same
+data file whose label is identical apart from the unit between brackets; the first (conventional) unit is
+kept.
+
+```{r unit-duplicates}
+unit_duplicates <- variable_overview %>%
+  filter(type %in% c("continuous", "discrete")) %>%
+  mutate(stem = str_squish(str_remove(label, "\\s*\\([^()]*\\)\\s*$"))) %>%
+  group_by(file, stem) %>%
+  filter(n() > 1) %>%
+  mutate(keep = row_number() == 1) %>%
+  ungroup()
+
+unit_duplicates %>%
+  group_by(file, stem) %>%
+  summarise(kept = variable[keep], removed = paste(variable[!keep], collapse = ", "), .groups = "drop") %>%
+  knitr::kable(caption = "Unit duplicates: the conventional unit is kept")
+
+# sanity check: kept and removed columns should be (almost) perfectly correlated
+unit_duplicates %>%
+  group_by(file, stem) %>%
+  summarise(r = cor(nhanes[[variable[1]]], nhanes[[variable[2]]], use = "complete.obs"),
+            .groups = "drop") %>%
+  summarise(min_correlation = min(r))
+
+dup_unit_vars <- unit_duplicates %>% filter(!keep) %>% pull(variable)
+```
+
+All removed columns correlate (almost) perfectly with the kept column. The lowest correlation (≈ 0.96) is
+for total calcium, where the SI values are rounded to two decimals; the information is the same. Three LDL estimates (Friedewald, Martin-Hopkins, NIH equation) are *not* unit duplicates:
+they are different formulas and are kept for now.
+
+## Detection limits
+
+For many analytes (metals, PFAS, volatile organic compounds, hormones) a comment code indicates whether the
+value is below the limit of detection (LOD). NHANES replaces such values by LOD/√2, so an analyte that is
+mostly below the LOD is close to a constant and carries little information. Each comment code is linked to
+its analyte (the nearest preceding measurement in the same data file) and the fraction of values below the
+LOD is calculated.
+
+```{r lod}
+cb_measurements <- variable_overview %>%
+  filter(!variable %in% c(lod_codes, dup_unit_vars, weights_design, technical))
+
+lod_summary <- variable_overview %>%
+  filter(variable %in% lod_codes) %>%
+  select(lod_code = variable, file, cb_index) %>%
+  mutate(analyte = map2_chr(file, cb_index, function(f, i) {
+    cb_measurements %>% filter(file == f, cb_index < i) %>% slice_max(cb_index, n = 1) %>% pull(variable)
+  })) %>%
+  mutate(n_measured  = map_int(lod_code, ~ sum(!is.na(nhanes[[.x]]))),
+         below_lod   = map_dbl(lod_code, ~ mean(nhanes[[.x]] == 1, na.rm = TRUE))) %>%
+  left_join(variable_overview %>% select(analyte = variable, label), by = "analyte")
+
+# the mapping can be checked by eye
+lod_summary %>% select(lod_code, analyte, label) %>% head(10)
+```
+
+```{r lod-plot, fig.height = 9}
+lod_summary %>%
+  filter(below_lod > 0) %>%
+  ggplot(aes(x = reorder(paste0(analyte, " - ", str_trunc(label, 35)), below_lod),
+             y = below_lod * 100, fill = below_lod > MAX_BELOW_LOD)) +
+  geom_col() +
+  geom_hline(yintercept = MAX_BELOW_LOD * 100, linetype = 2, colour = "grey30") +
+  coord_flip() +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 100)) +
+  scale_fill_manual(values = c("grey60", "#C95C4F"), labels = c("kept", "removed")) +
+  theme_classic() +
+  theme(axis.text.y = element_text(size = 6), axis.line.y = element_blank(),
+        axis.ticks.y = element_blank()) +
+  labs(x = "", y = "% of measured values below the limit of detection", fill = "",
+       title = "Analytes with at least one value below the detection limit")
+```
+
+```{r lod-remove}
+lod_removed <- lod_summary %>% filter(below_lod > MAX_BELOW_LOD) %>% pull(analyte)
+length(lod_removed)
+```
+
+Analytes with more than `r MAX_BELOW_LOD * 100`% of their values below the detection limit are removed
+(`r length(lod_removed)` analytes, mainly volatile organic compounds, several PFAS, ethyl/inorganic mercury
+and minor folate forms). For the analytes that are kept, values below the LOD stay as provided (LOD/√2).
+The comment codes themselves are not used as features.
+
+## Constant columns, design variables and replicate readings
+
+```{r constant}
+constant_vars <- names(nhanes)[map_lgl(nhanes, ~ n_distinct(na.omit(.x)) <= 1)]
+constant_vars
+```
+
+* **Constant columns** (`r length(constant_vars)`) carry no information, e.g. `SDDSRVYR` (same release
+  cycle for everybody) and `LBDHD` (hepatitis D antibody, negative for everybody tested).
+* **Survey weights and design variables** (`WT...`, `SDMVPSU`, `SDMVSTRA`) are not features. NHANES
+  oversamples some groups; population estimates would require a weighted (survey) analysis with
+  `WTMEC2YR`, `SDMVPSU` and `SDMVSTRA`. We keep these columns as metadata so this remains possible, but
+  analyse the data unweighted, which is acceptable for the association analyses in Parts 2–4 (and is
+  mentioned as a limitation).
+* **Blood pressure** was measured three times (technical replicates). We use the mean of the available
+  readings, as is common practice. The plot below shows that the readings agree well, with the first
+  reading slightly higher on average (a known "white coat" effect, and a reason to average).
+
+```{r bp-readings, fig.height = 3.5}
+nhanes %>%
+  select(SEQN, BPXOSY1, BPXOSY2, BPXOSY3) %>%
+  pivot_longer(-SEQN, names_to = "reading", values_to = "systolic") %>%
+  drop_na() %>%
+  group_by(SEQN) %>%
+  mutate(diff_from_mean = systolic - mean(systolic)) %>%
+  ungroup() %>%
+  mutate(reading = str_replace(reading, "BPXOSY", "reading ")) %>%
+  ggplot(aes(x = reading, y = diff_from_mean)) +
+  geom_boxplot(outlier.size = 0.3, fill = "grey85") +
+  geom_hline(yintercept = 0, linetype = 2) +
+  theme_classic() +
+  theme(axis.line.x = element_blank(), axis.ticks.x = element_blank()) +
+  labs(x = "", y = "difference from participant's mean (mmHg)",
+       title = "Systolic blood pressure: agreement between the three readings")
+```
+
+```{r derived}
+nhanes <- nhanes %>%
+  mutate(
+    SBP_mean   = rowMeans(across(c(BPXOSY1, BPXOSY2, BPXOSY3)), na.rm = TRUE),
+    DBP_mean   = rowMeans(across(c(BPXODI1, BPXODI2, BPXODI3)), na.rm = TRUE),
+    PULSE_mean = rowMeans(across(c(BPXOPLS1, BPXOPLS2, BPXOPLS3)), na.rm = TRUE),
+    across(c(SBP_mean, DBP_mean, PULSE_mean), ~ if_else(is.nan(.x), NA_real_, .x)),
+    FAST_HOURS = PHAFSTHR + PHAFSTMN / 60,
+    # serum cotinine >= 3 ng/mL indicates active tobacco use (Benowitz et al., 2009)
+    SMOKER_COT = factor(if_else(LBXCOT >= 3, "yes", "no"), levels = c("no", "yes"))
+  )
+
+bp_readings <- c(paste0("BPXOSY", 1:3), paste0("BPXODI", 1:3), paste0("BPXOPLS", 1:3))
+derived_labels <- tribble(
+  ~variable,    ~label,
+  "SBP_mean",   "Systolic blood pressure, mean of readings (mmHg)",
+  "DBP_mean",   "Diastolic blood pressure, mean of readings (mmHg)",
+  "PULSE_mean", "Pulse, mean of readings (/min)",
+  "FAST_HOURS", "Fasting time before blood draw (hours)",
+  "SMOKER_COT", "Active tobacco use (serum cotinine >= 3 ng/mL)")
+
+nhanes <- nhanes %>%
+  select(-all_of(c(dup_unit_vars, lod_removed, setdiff(constant_vars, "SDDSRVYR"),
+                   bp_readings, lod_codes)))
+
+log_step("Redundant columns", nhanes,
+         paste0("Removed ", length(dup_unit_vars), " unit duplicates, ", length(lod_removed),
+                " analytes with >", MAX_BELOW_LOD * 100, "% below LOD, ", length(lod_codes),
+                " LOD comment codes, constant columns and the 9 single BP readings (replaced by their means). ",
+                "Added derived variables SBP_mean, DBP_mean, PULSE_mean, FAST_HOURS, SMOKER_COT."))
+```
+
+# Missing values
+
+## How much is missing?
+
+```{r missing-overview, fig.height = 4}
+missing_per_variable <- tibble(variable = names(nhanes),
+                               missing = map_dbl(nhanes, ~ mean(is.na(.x)))) %>%
+  left_join(variable_overview %>% select(variable, label, file, component), by = "variable") %>%
+  mutate(component = replace_na(component, "Derived"))
+
+summary(missing_per_variable$missing)
+
+missing_per_variable %>%
+  ggplot(aes(x = missing * 100, fill = component)) +
+  geom_histogram(binwidth = 5, boundary = 0) +
+  scale_fill_brewer(palette = "Set2") +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_x_continuous(expand = c(0, 0)) +
+  theme_classic() +
+  labs(x = "% of participants with a missing value", y = "number of variables",
+       title = "Missingness per variable (all participants)")
+```
+
+Only a handful of variables are complete; most variables are missing for 30–60% of the participants. This is
+far too much to be random noise, so we look for the mechanism behind it.
+
+## Where and why are values missing?
+
+NHANES has a nested design that explains most of the missing values:
+
+1. **Interview only.** `RIDSTATR` = 1 means that the participant was interviewed but did not visit the mobile
+   examination centre. These participants have no examination or laboratory data at all.
+2. **Eligibility by age and sex.** Many measurements are only done in certain age groups (e.g. glycohemoglobin
+   from 12 years on, the alcohol questionnaire from 18 on, early childhood questions up to 15 years) or only in
+   women/young children (ferritin, transferrin receptor, pregnancy test).
+3. **Random subsamples by design.** Fasting measurements (glucose, insulin, triglycerides, LDL) are only done
+   in the morning session, and PFAS and volatile organic compounds in a random one-third subsample.
+4. **Item non-response.** Refusals, failed blood draws or insufficient sample volume.
+
+The heatmap below shows, for a random selection of 1500 participants, which values are observed. Rows are
+split by examination status and age group, columns by NHANES component.
+
+```{r missing-heatmap, fig.width = 10, fig.height = 7}
+age_groups <- function(age) cut(age, breaks = c(-Inf, 11, 19, 39, 59, Inf),
+                                labels = c("0-11", "12-19", "20-39", "40-59", "60-80"))
+
+heatmap_rows <- nhanes %>%
+  mutate(status = if_else(RIDSTATR == 2, "examined", "interview only"),
+         age_group = age_groups(RIDAGEYR)) %>%
+  slice_sample(n = 1500)
+
+heatmap_vars <- missing_per_variable %>%
+  filter(!variable %in% c("SEQN", weights_design), component != "Derived") %>%
+  arrange(component, file)
+
+observed_matrix <- heatmap_rows %>%
+  select(all_of(heatmap_vars$variable)) %>%
+  mutate(across(everything(), ~ as.numeric(!is.na(.x)))) %>%
+  as.matrix()
+
+Heatmap(observed_matrix,
+        name = "value",
+        col = c("0" = "grey92", "1" = "#2C5F8A"),
+        heatmap_legend_param = list(labels = c("missing", "observed"), at = c(0, 1)),
+        row_split = paste(heatmap_rows$status, heatmap_rows$age_group, sep = ", "),
+        column_split = heatmap_vars$component,
+        cluster_rows = FALSE, cluster_columns = FALSE,
+        cluster_row_slices = FALSE, cluster_column_slices = FALSE,
+        show_row_names = FALSE, show_column_names = FALSE,
+        row_title_rot = 0, row_title_gp = gpar(fontsize = 8),
+        column_title_gp = gpar(fontsize = 8), column_title_rot = 90,
+        use_raster = TRUE)
+```
+
+The same information summarised per data file and age group:
+
+```{r missing-by-file-age, fig.width = 9, fig.height = 8}
+nhanes %>%
+  mutate(age_group = age_groups(RIDAGEYR),
+         status = if_else(RIDSTATR == 2, "examined", "interview only")) %>%
+  select(SEQN, status, age_group, all_of(heatmap_vars$variable)) %>%
+  pivot_longer(-c(SEQN, status, age_group), names_to = "variable",
+               values_to = "value", values_transform = as.character) %>%
+  left_join(variable_overview %>% select(variable, file), by = "variable") %>%
+  group_by(status, age_group, file) %>%
+  summarise(observed = mean(!is.na(value)) * 100, .groups = "drop") %>%
+  ggplot(aes(x = age_group, y = fct_rev(file), fill = observed)) +
+  geom_tile(colour = "white") +
+  geom_text(aes(label = round(observed)), size = 2.3) +
+  facet_wrap(~status) +
+  scale_fill_distiller(palette = "Blues", direction = 1, limits = c(0, 100)) +
+  theme_minimal() +
+  theme(panel.grid = element_blank()) +
+  labs(x = "age group (years)", y = "NHANES data file", fill = "% observed",
+       title = "Missingness is largely structural: examination status and age decide what is measured")
+```
+
+```{r fasting-by-design}
+# fasting labs are only measured in the morning session
+nhanes %>%
+  filter(RIDSTATR == 2, RIDAGEYR >= 12) %>%
+  group_by(session = factor(PHDSESNZ, levels = c(0, 1), labels = c("morning", "afternoon/evening"))) %>%
+  summarise(n = n(), fasting_glucose_measured = mean(!is.na(LBXGLU)),
+            HbA1c_measured = mean(!is.na(LBXGH)))
+```
+
+**Is the remaining missingness random?** Among examined adults, a missing blood sample is not the result of the
+design. We check whether participants with and without a glycohemoglobin result (a measurement that should be
+available for all examined adults) differ in age, sex and income, using the tests from the statistics
+practical.
+
+```{r missing-not-random}
+missing_check <- nhanes %>%
+  filter(RIDSTATR == 2, RIDAGEYR >= MIN_AGE) %>%
+  mutate(HbA1c_missing = factor(is.na(LBXGH), labels = c("observed", "missing")))
+
+table(missing_check$HbA1c_missing)
+wilcox.test(RIDAGEYR ~ HbA1c_missing, data = missing_check)
+chisq.test(table(missing_check$RIAGENDR, missing_check$HbA1c_missing))
+wilcox.test(INDFMPIR ~ HbA1c_missing, data = missing_check)
+
+missing_summary <- missing_check %>%
+  group_by(HbA1c_missing) %>%
+  summarise(n = n(), median_age = median(RIDAGEYR), pct_female = mean(RIAGENDR == 2) * 100,
+            median_income_ratio = median(INDFMPIR, na.rm = TRUE))
+missing_summary
+```
+
+Only `r round(mean(missing_check$HbA1c_missing == "missing") * 100, 1)`% of the examined adults lack a blood
+result. Sex does not differ between both groups, but participants without a blood result have a lower
+income-to-poverty ratio (median `r round(missing_summary$median_income_ratio[2], 2)` versus
+`r round(missing_summary$median_income_ratio[1], 2)`) and are slightly younger. The missingness is therefore
+**not completely at random**: it depends on observed characteristics (missing at random with respect to income
+and age). Because the fraction is small, the impact is limited, but it is reported as a possible source of bias.
+
+**How do we handle missingness?**
+
+* Structural missingness (not examined, not eligible) is handled by restricting the **analysis population**
+  (next section) instead of by imputation: imputing a pregnancy test for men or an alcohol questionnaire for
+  children makes no sense.
+* Subsample missingness (fasting labs, PFAS, VOCs) is missing completely at random *within* the eligible
+  group, but only by design. Fasting variables can be used, but analyses with them are automatically restricted
+  to the morning-session subsample (about half of the participants).
+* The small amount of item non-response that remains is **not imputed** in the exported dataset. Each analysis
+  in Parts 2–3 uses complete cases on the variables it needs, which is the most transparent choice. Where an
+  algorithm needs a complete matrix (PCA in this notebook, machine learning in Part 4), the choice (complete
+  cases or imputation fitted on the training data only) is made and reported in that analysis.
+
+# Analysis population and feature filtering
+
+## Samples
+
+Based on the missingness structure, the analysis population is defined as:
+
+* **examined participants** (`RIDSTATR` = 2): only they have examination and laboratory data;
+* **adults aged `r MIN_AGE` or older**: most laboratory panels, the education variable and the alcohol
+  questionnaire are adult measurements, and adult reference values differ from those in children;
+* **not pregnant** (`RIDEXPRG` = 1 or a positive urine pregnancy test): pregnancy changes many laboratory values
+  (e.g. haemoglobin, lipids, hormones) and the group is too small (n ≈ 40) to study separately.
+
+```{r sample-selection}
+flow <- tibble(step = "All participants", n = nrow(nhanes))
+
+analysis <- nhanes %>% filter(RIDSTATR == 2)
+flow <- add_row(flow, step = "Examined in the mobile examination centre", n = nrow(analysis))
+
+analysis <- analysis %>% filter(RIDAGEYR >= MIN_AGE)
+flow <- add_row(flow, step = paste0("Aged ", MIN_AGE, " years or older"), n = nrow(analysis))
+
+analysis <- analysis %>% filter(!(RIDEXPRG %in% 1), !(URXPREG %in% 1))
+flow <- add_row(flow, step = "Not pregnant", n = nrow(analysis))
+
+knitr::kable(flow, caption = "Participant flow")
+log_step("Analysis population", analysis,
+         paste0("Kept examined participants (RIDSTATR = 2) aged >= ", MIN_AGE, " who are not pregnant."))
+```
+
+## Features
+
+Within this population, features that are mostly missing cannot support any analysis. We remove features missing
+in more than `r MAX_MISSING_FEATURE * 100`% of the analysis population. With this threshold the fasting
+subsample (about 50% observed) is kept, while the PFAS and VOC subsamples (about one third) and the
+children/women-only measurements are removed. Next, near-zero-variance features (one value in more than
+`r NZV_THRESHOLD * 100`% of the observations) are removed.
+
+```{r feature-filter}
+metadata_vars <- c("SEQN", weights_design, technical, "FAST_HOURS")
+candidate_features <- setdiff(names(analysis), metadata_vars)
+
+feature_missing <- tibble(variable = candidate_features,
+                          missing = map_dbl(candidate_features, ~ mean(is.na(analysis[[.x]])))) %>%
+  left_join(missing_per_variable %>% select(variable, label, component), by = "variable")
+
+feature_missing %>%
+  ggplot(aes(x = reorder(variable, missing), y = missing * 100,
+             fill = missing > MAX_MISSING_FEATURE)) +
+  geom_col(width = 1) +
+  geom_hline(yintercept = MAX_MISSING_FEATURE * 100, linetype = 2) +
+  scale_fill_manual(values = c("grey60", "#C95C4F"), labels = c("kept", "removed")) +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 100)) +
+  theme_classic() +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), axis.line.x = element_blank()) +
+  labs(x = "features (ordered by missingness)", y = "% missing in analysis population", fill = "",
+       title = "Feature filtering on missingness")
+
+too_missing <- feature_missing %>% filter(missing > MAX_MISSING_FEATURE) %>% pull(variable)
+
+top_share <- function(x) { x <- na.omit(x); if (length(x) == 0) return(1); max(table(x)) / length(x) }
+near_zero_var <- tibble(variable = setdiff(candidate_features, too_missing)) %>%
+  mutate(top_value_share = map_dbl(variable, ~ top_share(analysis[[.x]]))) %>%
+  filter(top_value_share > NZV_THRESHOLD) %>%
+  left_join(missing_per_variable %>% select(variable, label), by = "variable")
+near_zero_var
+
+analysis <- analysis %>% select(-all_of(c(too_missing, near_zero_var$variable)))
+features <- setdiff(names(analysis), metadata_vars)
+
+log_step("Feature filtering", analysis,
+         paste0("Removed ", length(too_missing), " features with >", MAX_MISSING_FEATURE * 100,
+                "% missing and ", nrow(near_zero_var), " near-zero-variance features (top value >",
+                NZV_THRESHOLD * 100, "%)."))
+length(features)
+```
+
+After filtering, `r length(features)` features remain for `r nrow(analysis)` participants.
+
+## Categorical variables as factors
+
+The remaining categorical codes are converted to factors. The most important demographic variables get
+readable labels.
+
+```{r factors}
+analysis <- analysis %>%
+  mutate(
+    RIAGENDR = factor(RIAGENDR, levels = 1:2, labels = c("male", "female")),
+    RIDRETH3 = factor(RIDRETH3, levels = c(1, 2, 3, 4, 6, 7),
+                      labels = c("Mexican American", "Other Hispanic", "Non-Hispanic White",
+                                 "Non-Hispanic Black", "Non-Hispanic Asian", "Other/multiracial")),
+    DMDEDUC2 = factor(DMDEDUC2, levels = 1:5, ordered = TRUE,
+                      labels = c("< 9th grade", "9-11th grade", "high school/GED",
+                                 "some college/AA", "college graduate+")),
+    DMDMARTZ = factor(DMDMARTZ, levels = 1:3,
+                      labels = c("married/living with partner", "widowed/divorced/separated",
+                                 "never married")),
+    DMDBORN4 = factor(DMDBORN4, levels = 1:2, labels = c("USA", "other country")),
+    RIDEXMON = factor(RIDEXMON, levels = 1:2, labels = c("Nov-Apr", "May-Oct")),
+    PHDSESNZ = factor(PHDSESNZ, levels = 0:1, labels = c("morning", "afternoon/evening")),
+    across(any_of(c("DMQMILIZ", "ALQ111", "ALQ151")),
+           ~ factor(.x, levels = 1:2, labels = c("yes", "no"))),
+    across(any_of(setdiff(nominal, c("RIAGENDR", "RIDRETH3", "DMDMARTZ", "DMDBORN4",
+                                     "DMQMILIZ", "ALQ111", "ALQ151"))), as.factor),
+    across(any_of(setdiff(ordinal, "DMDEDUC2")), ~ factor(.x, ordered = TRUE))
+  )
+
+# RIDRETH1 is a coarser version of RIDRETH3 (Asian participants are pooled with "other"): keep RIDRETH3
+analysis <- analysis %>% select(-any_of("RIDRETH1"))
+features <- setdiff(features, "RIDRETH1")
+
+continuous_features <- features[map_lgl(features, ~ is.numeric(analysis[[.x]]) &&
+                                          n_distinct(na.omit(analysis[[.x]])) > 15)]
+length(continuous_features)
+```
+
+# Implausible values and outliers
+
+## Biologically impossible values
+
+For key clinical variables we define generous plausibility limits. Values outside these limits would point to
+measurement or data-entry errors and are set to missing.
+
+```{r plausibility}
+plausibility <- tribble(
+  ~variable,    ~lower, ~upper,
+  "SBP_mean",       60,    270,
+  "DBP_mean",       25,    160,
+  "PULSE_mean",     30,    200,
+  "BMXHT",         120,    220,
+  "BMXWT",          25,    300,
+  "BMXBMI",         12,     90,
+  "BMXWAIST",       40,    200,
+  "LBXGH",           3,     20,
+  "LBXGLU",         30,    700,
+  "LBXTC",          50,    700,
+  "LBDHDD",          5,    200,
+  "LBXHGB",          4,     22) %>%
+  filter(variable %in% names(analysis)) %>%
+  mutate(n_below = map2_int(variable, lower, ~ sum(analysis[[.x]] < .y, na.rm = TRUE)),
+         n_above = map2_int(variable, upper, ~ sum(analysis[[.x]] > .y, na.rm = TRUE)),
+         observed_min = map_dbl(variable, ~ min(analysis[[.x]], na.rm = TRUE)),
+         observed_max = map_dbl(variable, ~ max(analysis[[.x]], na.rm = TRUE)))
+knitr::kable(plausibility, caption = "Plausibility check of key clinical variables")
+
+for (i in seq_len(nrow(plausibility))) {
+  v <- plausibility$variable[i]
+  out <- analysis[[v]] < plausibility$lower[i] | analysis[[v]] > plausibility$upper[i]
+  analysis[[v]][which(out)] <- NA
+}
+```
+
+Values outside the plausible range are rare or absent: the dataset has already been cleaned by NHANES.
+Extreme but possible values (e.g. a glucose of 500 mg/dL in an untreated diabetic) are **not** removed.
+
+## Distributions and transformation
+
+Many laboratory values are right-skewed (concentrations cannot be negative, and a few participants have very
+high values, e.g. CRP during an infection or cotinine in smokers). Skewed variables violate the assumptions of
+the linear models and t-tests of Parts 2–3 and dominate distance-based methods such as PCA. Continuous features
+with a skewness above `r SKEW_THRESHOLD` are therefore **log2-transformed** (one unit = a doubling). Variables
+with zeros get a small offset (half of the smallest positive value).
+
+```{r skewness}
+skew_table <- tibble(variable = continuous_features) %>%
+  mutate(skew_raw  = map_dbl(variable, ~ skewness(analysis[[.x]])),
+         min_value = map_dbl(variable, ~ min(analysis[[.x]], na.rm = TRUE)),
+         transform = skew_raw > SKEW_THRESHOLD & min_value >= 0)
+
+log_vars <- skew_table %>% filter(transform) %>% pull(variable)
+
+analysis_transformed <- analysis
+offsets <- c()
+for (v in log_vars) {
+  x <- analysis[[v]]
+  offset <- if (min(x, na.rm = TRUE) == 0) min(x[x > 0], na.rm = TRUE) / 2 else 0
+  offsets[v] <- offset
+  analysis_transformed[[v]] <- log2(x + offset)
+}
+
+skew_table <- skew_table %>%
+  mutate(skew_after = map_dbl(variable, ~ skewness(analysis_transformed[[.x]])))
+
+skew_table %>%
+  pivot_longer(c(skew_raw, skew_after), names_to = "version", values_to = "skewness") %>%
+  mutate(version = factor(version, levels = c("skew_raw", "skew_after"),
+                          labels = c("before transformation", "after transformation"))) %>%
+  ggplot(aes(x = skewness)) +
+  geom_histogram(binwidth = 0.5, fill = "grey40", boundary = 0) +
+  geom_vline(xintercept = c(-SKEW_THRESHOLD, SKEW_THRESHOLD), linetype = 2) +
+  facet_wrap(~version, ncol = 1) +
+  coord_cartesian(xlim = c(-5, 30)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  theme_classic() +
+  labs(x = "skewness", y = "number of features",
+       title = paste0(length(log_vars), " of ", length(continuous_features),
+                      " continuous features were log2-transformed"))
+
+log_step("Transformation", analysis_transformed,
+         paste0("log2-transformed ", length(log_vars), " right-skewed continuous features (skewness > ",
+                SKEW_THRESHOLD, "); offset = half the smallest positive value when zeros were present."))
+```
+
+```{r transformation-examples, fig.height = 5}
+example_vars <- c(LBXHSCRP = "CRP (mg/L)", LBXCOT = "cotinine (ng/mL)",
+                  LBXTLG = "triglycerides (mg/dL)", LBXSATSI = "ALT (IU/L)")
+example_vars <- example_vars[names(example_vars) %in% log_vars]
+
+bind_rows(
+  analysis %>% select(all_of(names(example_vars))) %>% mutate(version = "original scale"),
+  analysis_transformed %>% select(all_of(names(example_vars))) %>% mutate(version = "log2 scale")) %>%
+  pivot_longer(-version, names_to = "variable", values_to = "value") %>%
+  drop_na() %>%
+  mutate(version = fct_relevel(version, "original scale"),
+         variable = example_vars[variable]) %>%
+  ggplot(aes(x = value)) +
+  geom_density(fill = "#2C5F8A", colour = "#2C5F8A", alpha = 0.5) +
+  facet_grid(version ~ variable, scales = "free") +
+  theme_classic() +
+  labs(x = "", y = "density", title = "Examples of skewed laboratory values before and after log2 transformation")
+```
+
+Cotinine stays bimodal after transformation: non-smokers have values near the detection limit and smokers
+values that are about 1000 times higher. This is biology, not a technical artefact, and it is the reason why
+the derived variable `SMOKER_COT` is useful.
+
+## Outlying values and participants
+
+After transformation, we flag values more than `r ROBUST_Z` robust standard deviations
+(median ± `r ROBUST_Z` × 1.4826 × MAD) from the median. Robust statistics are used because the mean and SD
+themselves are influenced by outliers. Cotinine and hydroxycotinine are left out of this count: their
+distribution is bimodal (smokers versus non-smokers), so every smoker would be flagged as an outlier.
+
+```{r outliers}
+robust_z <- function(x) (x - median(x, na.rm = TRUE)) / (1.4826 * mad(x, na.rm = TRUE, constant = 1))
+outlier_features <- setdiff(continuous_features, c("LBXCOT", "LBXHCOT"))
+
+z_matrix <- analysis_transformed %>%
+  select(all_of(outlier_features)) %>%
+  mutate(across(everything(), robust_z)) %>%
+  as.matrix()
+z_matrix[!is.finite(z_matrix)] <- NA     # features with MAD = 0
+
+outlier_per_feature <- tibble(variable = outlier_features,
+                              n_outliers = colSums(abs(z_matrix) > ROBUST_Z, na.rm = TRUE)) %>%
+  left_join(variable_overview %>% select(variable, label), by = "variable") %>%
+  arrange(desc(n_outliers))
+head(outlier_per_feature, 10)
+
+outlier_per_sample <- tibble(SEQN = analysis_transformed$SEQN,
+                             n_outlying = rowSums(abs(z_matrix) > ROBUST_Z, na.rm = TRUE),
+                             n_measured = rowSums(!is.na(z_matrix))) %>%
+  mutate(pct_outlying = n_outlying / n_measured * 100)
+```
+
+```{r outliers-plot, fig.height = 3.5}
+outlier_per_sample %>%
+  ggplot(aes(x = n_outlying)) +
+  geom_histogram(binwidth = 1, fill = "grey40") +
+  scale_y_continuous(expand = c(0, 0)) +
+  theme_classic() +
+  labs(x = paste0("number of features with |robust z| > ", ROBUST_Z), y = "number of participants",
+       title = "Most participants have no or very few outlying values")
+```
+
+```{r outliers-inspect}
+# which features are outlying in the participants with the most outliers?
+top_outlier_samples <- outlier_per_sample %>% slice_max(n_outlying, n = 5)
+for (s in top_outlier_samples$SEQN) {
+  i <- which(analysis_transformed$SEQN == s)
+  flagged <- outlier_features[which(abs(z_matrix[i, ]) > ROBUST_Z)]
+  cat("SEQN", s, "- age", analysis_transformed$RIDAGEYR[i], "-",
+      as.character(analysis_transformed$RIAGENDR[i]), ":",
+      paste(flagged, collapse = ", "), "\n")
+}
+```
+
+**Interpretation.** Outlying values cluster in features where extreme values are clinically meaningful
+(glucose and HbA1c in diabetes, the albumin–creatinine ratio in kidney disease, progesterone in the luteal phase
+or pregnancy-like hormonal states, sodium disturbances). Participants with many outlying values show a coherent,
+disease-like profile rather than random errors, e.g. a kidney profile (albumin–creatinine ratio, creatinine,
+phosphorus, potassium, blood pressure), a diabetic profile (glucose, HbA1c, triglycerides, urinary albumin) or
+an anaemia/haemolysis-like profile (haemoglobin, haematocrit, RDW, LDH, bilirubin).
+We therefore consider them **interesting biology and keep them**; they are flagged in the exported dataset
+(`n_outlying_features`) so that sensitivity analyses without them remain possible. Robust methods or
+transformations are preferred over removing participants.
+
+# Quality control: correlation structure and PCA
+
+## Correlation between laboratory features
+
+If the preprocessing is correct, features that measure related physiology should correlate. For the laboratory
+features we calculate Spearman correlations (pairwise complete observations) and cluster them.
+
+```{r correlation-heatmap, fig.width = 10, fig.height = 10}
+lab_features <- intersect(continuous_features,
+                          variable_overview %>% filter(component == "Laboratory") %>% pull(variable))
+
+cor_matrix <- cor(analysis_transformed[, lab_features], use = "pairwise.complete.obs", method = "spearman")
+lab_labels <- variable_overview$label[match(lab_features, variable_overview$variable)]
+dimnames(cor_matrix) <- list(str_trunc(lab_labels, 30), str_trunc(lab_labels, 30))
+
+Heatmap(cor_matrix,
+        name = "Spearman\nrho",
+        col = colorRamp2(c(-1, 0, 1), c("#2166AC", "white", "#B2182B")),
+        clustering_distance_rows = function(m) as.dist(1 - abs(cor(t(m)))),
+        clustering_distance_columns = function(m) as.dist(1 - abs(cor(t(m)))),
+        row_names_gp = gpar(fontsize = 4), column_names_gp = gpar(fontsize = 4),
+        show_row_dend = FALSE,
+        column_title = "Correlation structure of the laboratory features")
+```
+
+The expected blocks appear (e.g. the lipid panel, red blood cell indices, white blood cell counts, folate forms,
+fatty acids, sex hormones, liver enzymes), which supports that the data are consistent. Very strongly correlated
+pairs (e.g. haemoglobin and haematocrit, total and serum cholesterol from two different labs) are a reminder to
+check for **multicollinearity** before putting such features together in a regression model (Part 2).
+
+## Principal component analysis
+
+Do participants group by biology or by a technical factor? PCA is run on the laboratory features with at most
+`r PCA_MAX_MISSING * 100`% missing (fasting measurements are thereby excluded, as they would restrict the PCA to
+the morning session). Participants with complete data on these features are used, and all features are
+standardised (z-scores) so that each contributes equally.
+
+```{r pca}
+pca_features <- lab_features[map_dbl(lab_features, ~ mean(is.na(analysis_transformed[[.x]]))) <= PCA_MAX_MISSING]
+
+pca_input <- analysis_transformed %>%
+  select(SEQN, all_of(pca_features)) %>%
+  drop_na()
+c(n_features = length(pca_features), n_participants = nrow(pca_input))
+
+pca_res <- prcomp(pca_input %>% select(-SEQN), center = TRUE, scale. = TRUE)
+
+pca_scores <- as_tibble(pca_res$x[, 1:10]) %>%
+  mutate(SEQN = pca_input$SEQN) %>%
+  left_join(analysis_transformed %>%
+              select(SEQN, RIAGENDR, RIDAGEYR, RIDRETH3, BMXBMI, SMOKER_COT, INDFMPIR, DMDEDUC2,
+                     PHDSESNZ, RIDEXMON, FAST_HOURS, SDMVPSU, SDMVSTRA),
+            by = "SEQN") %>%
+  mutate(age_group = age_groups(RIDAGEYR))
+```
+
+```{r pca-scree, fig.height = 3.5}
+explained <- tibble(PC = seq_along(pca_res$sdev), variance = pca_res$sdev^2 / sum(pca_res$sdev^2) * 100)
+
+explained %>%
+  filter(PC <= 20) %>%
+  ggplot(aes(x = PC, y = variance)) +
+  geom_col(fill = "grey60") +
+  scale_x_continuous(expand = c(0, 0), breaks = 1:20) +
+  scale_y_continuous(expand = c(0, 0)) +
+  theme_classic() +
+  labs(x = "principal component", y = "% of variance explained",
+       title = "Variance explained by the first 20 principal components")
+```
+
+```{r pca-plots, fig.width = 10, fig.height = 7.5}
+pc_lab <- function(k) paste0("PC", k, " (", round(explained$variance[k], 1), "%)")
+
+pca_plot <- function(colour_var, title) {
+  pca_scores %>%
+    drop_na(all_of(colour_var)) %>%
+    ggplot(aes(x = PC1, y = PC2, colour = .data[[colour_var]])) +
+    geom_point(size = 0.4, alpha = 0.5) +
+    scale_colour_brewer(palette = "Set1") +
+    guides(colour = guide_legend(override.aes = list(size = 3, alpha = 1))) +
+    theme_classic() +
+    theme(legend.position = "bottom") +
+    labs(x = pc_lab(1), y = pc_lab(2), colour = "", title = title)
+}
+
+pca_plots <- list(pca_plot("RIAGENDR",  "sex (biological)"),
+                  pca_plot("age_group", "age group (biological)"),
+                  pca_plot("PHDSESNZ",  "exam session (technical)"),
+                  pca_plot("RIDEXMON",  "six-month period (technical)"))
+
+# arrange the four plots in a 2 x 2 grid (base grid, no extra packages needed)
+grid.newpage()
+pushViewport(viewport(layout = grid.layout(2, 2)))
+for (k in seq_along(pca_plots)) {
+  print(pca_plots[[k]], vp = viewport(layout.pos.row = (k - 1) %/% 2 + 1,
+                                      layout.pos.col = (k - 1) %% 2 + 1))
+}
+```
+
+To quantify what drives each component, every PC is regressed on one covariate at a time; the R² (% of the PC's
+variance explained by that covariate) is shown in a heatmap.
+
+```{r pca-covariates, fig.width = 8, fig.height = 4.5}
+covariates <- c(sex = "RIAGENDR", age = "RIDAGEYR", `ethnicity` = "RIDRETH3", BMI = "BMXBMI",
+                `smoking (cotinine)` = "SMOKER_COT", `income/poverty ratio` = "INDFMPIR",
+                education = "DMDEDUC2", `exam session` = "PHDSESNZ", `six-month period` = "RIDEXMON",
+                `fasting time` = "FAST_HOURS", `pseudo-PSU` = "SDMVPSU", `pseudo-stratum` = "SDMVSTRA")
+covariate_kind <- c(rep("biological", 7), rep("technical / design", 5))
+
+r2_matrix <- sapply(paste0("PC", 1:10), function(pc) {
+  sapply(covariates, function(cv) {
+    d <- pca_scores %>% transmute(y = .data[[pc]], x = .data[[cv]]) %>% drop_na()
+    if (cv == "SDMVSTRA") d$x <- factor(d$x)              # stratum is a category, not a number
+    if (is.ordered(d$x)) d$x <- factor(d$x, ordered = FALSE)
+    summary(lm(y ~ x, data = d))$r.squared * 100
+  })
+})
+
+Heatmap(r2_matrix,
+        name = "R2 (%)",
+        col = colorRamp2(c(0, max(r2_matrix)), c("white", "#B2182B")),
+        cluster_rows = FALSE, cluster_columns = FALSE,
+        row_split = covariate_kind, row_title_rot = 0,
+        column_names_rot = 0, column_names_centered = TRUE,
+        cell_fun = function(j, i, x, y, width, height, fill) {
+          grid.text(sprintf("%.0f", r2_matrix[i, j]), x, y, gp = gpar(fontsize = 7))
+        },
+        column_title = "% of variance of each principal component explained by a covariate")
+```
+
+```{r pca-loadings, fig.height = 5}
+loading_labels <- variable_overview$label[match(rownames(pca_res$rotation), variable_overview$variable)]
+
+as_tibble(pca_res$rotation[, 1:2]) %>%
+  mutate(feature = str_trunc(loading_labels, 40)) %>%
+  pivot_longer(c(PC1, PC2), names_to = "PC", values_to = "loading") %>%
+  group_by(PC) %>%
+  slice_max(abs(loading), n = 12) %>%
+  ungroup() %>%
+  ggplot(aes(x = reorder(feature, abs(loading)), y = loading, fill = loading > 0)) +
+  geom_col() +
+  coord_flip() +
+  facet_wrap(~PC, scales = "free_y") +
+  scale_fill_manual(values = c("#2166AC", "#B2182B"), guide = "none") +
+  theme_classic() +
+  theme(axis.text.y = element_text(size = 7)) +
+  labs(x = "", y = "loading", title = "Features with the largest loadings on PC1 and PC2")
+```
+
+**Interpretation.** No distinct clusters appear: the participants form one continuous cloud, as expected for
+a population sample. The main axes of variation are biological: PC1 is driven mostly by age, PC2 by sex (sex
+hormones, haemoglobin/red cell indices, creatinine) and PC3 by BMI, while the later components also pick up
+ethnicity and smoking. The technical factors exam session, six-month period and fasting time explain almost
+none of the variance (R² ≤ 2%). The pseudo-strata explain a few percent, which is expected because they
+reflect geography and therefore the ethnic and socio-economic make-up of the sampled areas. The participants
+therefore group by the biology we care about rather than by a technical batch. Because the fasting measurements only exist for the morning session, `PHDSESNZ` should still be kept in
+mind as a design factor whenever fasting variables are analysed. The six-month period is confounded with
+geography (the mobile examination centres visit warmer locations in winter), so a small association with it is
+not necessarily a technical artefact.
+
+# Export the preprocessed dataset
+
+The exported dataset contains, for each participant of the analysis population:
+
+* `SEQN` and the survey weights/design variables (metadata, not features);
+* technical variables (exam session, six-month period, fasting time) as possible covariates;
+* all retained features, with skewed continuous features on the **log2 scale** (column names are unchanged,
+  the dictionary indicates which ones were transformed);
+* the number of outlying features per participant (`n_outlying_features`).
+
+Missing values are **not** imputed. Features are **not** standardised in the exported file (to keep effect sizes
+interpretable); standardisation is done within each multivariate analysis.
+
+```{r export}
+final <- analysis_transformed %>%
+  left_join(outlier_per_sample %>% select(SEQN, n_outlying_features = n_outlying), by = "SEQN") %>%
+  select(SEQN, all_of(intersect(weights_design, names(.))), any_of(technical), FAST_HOURS,
+         all_of(features), n_outlying_features)
+
+variable_dictionary <- tibble(variable = names(final)) %>%
+  left_join(bind_rows(variable_overview %>% select(variable, label, file, component, type),
+                      derived_labels %>% mutate(component = "Derived", type = "derived")),
+            by = "variable") %>%
+  mutate(role = case_when(variable == "SEQN" ~ "identifier",
+                          variable %in% weights_design ~ "survey weight / design",
+                          variable %in% c(technical, "FAST_HOURS") ~ "technical covariate",
+                          variable == "n_outlying_features" ~ "QC flag",
+                          TRUE ~ "feature"),
+         class = map_chr(variable, ~ class(final[[.x]])[1]),
+         transformation = case_when(!variable %in% log_vars ~ "none",
+                                    offsets[variable] == 0 ~ "log2(x)",
+                                    TRUE ~ paste0("log2(x + ", signif(offsets[variable], 3), ")")),
+         pct_missing = map_dbl(variable, ~ round(mean(is.na(final[[.x]])) * 100, 1)))
+
+log_step("Final dataset", final, "Exported preprocessed dataset (no imputation, no scaling).")
+
+dir.create("output", showWarnings = FALSE)
+write_csv(final, "output/NHANES_part1_preprocessed.csv")
+saveRDS(final, "output/NHANES_part1_preprocessed.rds")   # keeps factor levels
+write_csv(variable_dictionary, "output/NHANES_part1_variable_dictionary.csv")
+write_csv(preprocessing_log, "output/NHANES_part1_preprocessing_log.csv")
+
+knitr::kable(preprocessing_log, caption = "Preprocessing log")
+
+variable_dictionary %>%
+  filter(role == "feature") %>%
+  count(component, transformation = transformation != "none") %>%
+  pivot_wider(names_from = transformation, values_from = n, values_fill = 0,
+              names_prefix = "log2_transformed_") %>%
+  knitr::kable(caption = "Retained features per component")
+```
+
+# Is the dataset suitable for Parts 2–4?
+
+* **Sample size.** About `r format(nrow(final), big.mark = " ")` adults with `r length(features)` features is
+  ample for multivariable regression (Part 2), for testing many features (Part 3) and for training and testing
+  a prediction model (Part 4).
+* **Outcome and covariates.** Typical confounders are available and mostly complete: age, sex, ethnicity,
+  BMI, income-to-poverty ratio, education and smoking status (cotinine).
+* **Fasting variables** are only available for about half of the participants (morning session); questions on
+  insulin resistance or LDL must use this subsample and report its size.
+* **Transformations.** Coefficients of log2-transformed variables are interpreted per doubling of the value.
+* **Limitations to report:** unweighted analysis of a complex survey; top-coded age (80+) and income ratio (5+);
+  values below the detection limit replaced by LOD/√2 by NHANES; possible non-random missingness of the blood
+  sample; cross-sectional data, so associations are not causal.
+
+# References
+
+* Benowitz NL, Bernert JT, Caraballo RS, Holiday DB, Wang J. Optimal serum cotinine levels for distinguishing
+  cigarette smokers and nonsmokers within different racial/ethnic groups in the United States between 1999 and
+  2004. *Am J Epidemiol.* 2009;169(2):236–248.
+* National Center for Health Statistics. NHANES 2021–2023 data documentation, codebooks and frequencies.
+  <https://wwwn.cdc.gov/nchs/nhanes/continuousnhanes/default.aspx?Cycle=2021-2023>
+
+```{r session-info}
+sessionInfo()
+```

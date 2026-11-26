@@ -1,0 +1,9 @@
+step,n_samples,n_features,decision
+Raw data,11933,486,"Merged NHANES 2021-2023 file as provided (one row per participant, SEQN unique)."
+Special codes,11933,486,Recoded 1291 refused/don't know/indeterminate codes to NA (variable-specific code lists).
+Skip patterns,11933,486,Filled skipped alcohol questions with their implied value (0 drinks / 'no') for never or past-year non-drinkers.
+Redundant columns,11933,264,"Removed 44 unit duplicates, 46 analytes with >50% below LOD, 114 LOD comment codes, constant columns and the 9 single BP readings (replaced by their means). Added derived variables SBP_mean, DBP_mean, PULSE_mean, FAST_HOURS, SMOKER_COT."
+Analysis population,6023,264,Kept examined participants (RIDSTATR = 2) aged >= 20 who are not pregnant.
+Feature filtering,6023,210,Removed 51 features with >50% missing and 3 near-zero-variance features (top value >95%).
+Transformation,6023,209,log2-transformed 75 right-skewed continuous features (skewness > 1); offset = half the smallest positive value when zeros were present.
+Final dataset,6023,210,"Exported preprocessed dataset (no imputation, no scaling)."
